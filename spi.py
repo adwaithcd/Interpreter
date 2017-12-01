@@ -35,6 +35,7 @@ COLON         = 'COLON'
 COMMA         = 'COMMA'
 PROCEDURE     = 'PROCEDURE'
 EOF           = 'EOF'
+CALL          = 'CALL'
 
 
 class Token(object):
@@ -68,6 +69,7 @@ RESERVED_KEYWORDS = {
     'START': Token('START', 'START'),
     'END': Token('END', 'END'),
     'PROCEDURE': Token('PROCEDURE', 'PROCEDURE'),
+    'CALL': Token('CALL', 'CALL')
 }
 
 class Lexer(object):
@@ -225,13 +227,17 @@ class BinOp(AST):
         self.left = left
         self.token = self.op = op
         self.right = right
+        self.datatype = "NOTYPE"
+
 
 
 class Num(AST):
     def __init__(self, token):
         self.token = token
         self.value = token.value
-        #print(token.type)
+        #change
+        self.datatype = "INTEGER" if token.type=="INTEGER_CONST" else "REAL"
+        #print(self.datatype)
         # print("hello")
 
 
@@ -281,6 +287,7 @@ class VarDecl(AST):
     def __init__(self, var_node, type_node):
         self.var_node = var_node
         self.type_node = type_node
+        #print(type_node.value)
 
 
 class Type(AST):
@@ -431,6 +438,8 @@ class Parser(object):
             node = self.compound_statement()
         elif self.current_token.type == ID:
             node = self.assignment_statement()
+        elif self.current_token.type == CALL:
+            node = self.call_statement()
         else:
             node = self.empty()
         return node
@@ -445,6 +454,11 @@ class Parser(object):
         right = self.expr()
         node = Assign(left, token, right)
         return node
+
+    def call_statement(self):
+        self.eat(CALL)
+        proc_name = self.current_token.value
+        print(proc_name)
 
     def variable(self):
         """
@@ -680,6 +694,28 @@ class SemanticAnalyzer(NodeVisitor):
         pass
 
     def visit_BinOp(self, node):
+        if node.left.__class__.__name__== "Num":
+            leftDatatype = node.left.datatype
+        elif node.left.__class__.__name__== "BinOp":
+            leftDatatype = node.left.datatype
+        else:
+            leftDatatype = self.symtab.lookup(node.left.value).type
+
+        if node.right.__class__.__name__== "Num":
+            rightDatatype = node.right.datatype
+        elif node.right.__class__.__name__== "BinOp":
+            rightDatatype = node.right.datatype
+        else:
+            rightDatatype = self.symtab.lookup(node.right.value).type
+
+        if leftDatatype != rightDatatype:
+            raise Exception(
+                "Error: Cannot operate on mismatching datatypes"
+            )
+
+        if leftDatatype == "REAL" or rightDatatype == "REAL":
+            node.datatype = "REAL"
+
         self.visit(node.left)
         self.visit(node.right)
 
@@ -703,12 +739,28 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_Assign(self, node):
         # right-hand side
+        #print(node.right.datatype)
         self.visit(node.right)
+        #print(node.right.datatype)
         # left-hand side
         self.visit(node.left)
-        #if node.left.__class__.__name__ == "Num":
-        print(self.symtab.lookup(node.left.value).type)
-        
+        #print(node.right.__class__.__name__,self.symtab.lookup(node.left.value).type,node.right.datatype)
+        if node.right.__class__.__name__ == "Num":
+            if str(self.symtab.lookup(node.left.value).type) == "INTEGER" and str(node.right.datatype) == "REAL":
+                raise Exception(
+                    "Error: Non Matching types"
+                )
+        elif node.right.__class__.__name__ == "BinOp":
+            if str(self.symtab.lookup(node.left.value).type) == "INTEGER" and str(node.right.datatype) == "REAL":
+                raise Exception(
+                    "Error: Non Matching types"
+                )
+        elif node.right.__class__.__name__ == "Var":
+            if str(self.symtab.lookup(node.left.value).type) == "INTEGER" and str(self.symtab.lookup(node.right.value).type) == "REAL":
+                raise Exception(
+                    "Error: Non Matching types"
+                )
+
 
     def visit_Num(self,node):
         pass
@@ -720,6 +772,9 @@ class SemanticAnalyzer(NodeVisitor):
             raise Exception(
                 "Error: Symbol(identifier) not found '%s'" % var_name
             )
+
+    def visit_ProcedureDecl(self, node):
+        pass
 
 ###############################################################################
 #                                                                             #
