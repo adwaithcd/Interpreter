@@ -1,6 +1,7 @@
 """ SPI - Simple Pascal Interpreter. Part 13. """
 
 from collections import OrderedDict
+import sys
 
 ###############################################################################
 #                                                                             #
@@ -36,7 +37,7 @@ COMMA         = 'COMMA'
 PROCEDURE     = 'PROCEDURE'
 EOF           = 'EOF'
 CALL          = 'CALL'
-
+WRITE         = 'WRITE'
 
 class Token(object):
     def __init__(self, type, value):
@@ -69,7 +70,8 @@ RESERVED_KEYWORDS = {
     'START': Token('START', 'START'),
     'END': Token('END', 'END'),
     'PROCEDURE': Token('PROCEDURE', 'PROCEDURE'),
-    'CALL': Token('CALL', 'CALL')
+    'CALL': Token('CALL', 'CALL'),
+    'WRITE': Token('WRITE', 'WRITE')
 }
 
 class Lexer(object):
@@ -240,7 +242,6 @@ class Num(AST):
         #print(self.datatype)
         # print("hello")
 
-
 class UnaryOp(AST):
     def __init__(self, op, expr):
         self.token = self.op = op
@@ -300,6 +301,17 @@ class ProcedureDecl(AST):
     def __init__(self, proc_name, block_node):
         self.proc_name = proc_name
         self.block_node = block_node
+
+
+class Call(AST):
+    def __init__(self,proc_name):
+        self.proc_name = proc_name
+
+
+class Write(AST):
+    def __init__(self,printer):
+        self.printer = printer
+        # print(self.printer)
 
 
 class Parser(object):
@@ -405,6 +417,7 @@ class Parser(object):
         """
         self.eat(START)
         nodes = self.statement_list()
+        #print(nodes)
         self.eat(END)
 
         root = Compound()
@@ -432,6 +445,8 @@ class Parser(object):
         """
         statement : compound_statement
                   | assignment_statement
+                  | call_statement
+                  | write_statement
                   | empty
         """
         if self.current_token.type == START:
@@ -440,6 +455,9 @@ class Parser(object):
             node = self.assignment_statement()
         elif self.current_token.type == CALL:
             node = self.call_statement()
+        elif self.current_token.type == WRITE:
+            # print("im here")
+            node = self.write_statement()
         else:
             node = self.empty()
         return node
@@ -458,7 +476,28 @@ class Parser(object):
     def call_statement(self):
         self.eat(CALL)
         proc_name = self.current_token.value
-        print(proc_name)
+        node = Call(proc_name)
+        self.eat(ID)
+        return node
+
+    def write_statement(self):
+        self.eat(WRITE)
+        self.eat(LPAREN)
+        printer = self.current_token.value
+        # print(self.current_token.value)
+        # print(self.current_token)
+        # print(printer)
+        node = Write(printer)
+        if self.current_token.type == ID:
+             # symtab = SymbolTable()
+             # print(symtab)
+             # if self.symtab.lookup(self.current_token.value) is not None:
+             #    print("jjj")
+                print(self.current_token.value)
+                self.eat(ID)
+
+        self.eat(RPAREN)
+        return node
 
     def variable(self):
         """
@@ -612,6 +651,9 @@ class Symbol(object):
         self.name = name
         self.type = type
 
+class ProcSymbol(Symbol):
+    def __init__(self,proc_name):
+        super(ProcSymbol, self).__init__(proc_name)
 
 class VarSymbol(Symbol):
     def __init__(self, name, type):
@@ -677,20 +719,39 @@ class SymbolTable(object):
 class SemanticAnalyzer(NodeVisitor):
     def __init__(self):
         self.symtab = SymbolTable()
+        self.proctab = SymbolTable()
+
+    def visit_Call(self,node):
+        print(node)
+        proc_name = node.proc_name
+        proc_symbol = self.proctab.lookup(proc_name)
+        if proc_symbol is None:
+            raise Exception(
+                "Error: Procedure not declared"
+            )
+
+        pass
+
+    def visit_Write(self, node):
+        pass
 
     def visit_Block(self, node):
+        print(node)
         for declaration in node.declarations:
             self.visit(declaration)
         self.visit(node.compound_statement)
 
     def visit_Program(self, node):
+        print(node)
         self.visit(node.block)
 
     def visit_Compound(self, node):
+        print(node)
         for child in node.children:
             self.visit(child)
 
     def visit_NoOp(self, node):
+        print(node)
         pass
 
     def visit_BinOp(self, node):
@@ -718,6 +779,8 @@ class SemanticAnalyzer(NodeVisitor):
 
         self.visit(node.left)
         self.visit(node.right)
+        print(node.left)
+        print(node.right)
 
     def visit_VarDecl(self, node):
         type_name = node.type_node.value
@@ -739,24 +802,28 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_Assign(self, node):
         # right-hand side
-        #print(node.right.datatype)
+        # print(node.right.datatype)
         self.visit(node.right)
-        #print(node.right.datatype)
+        # print(node.right.datatype)
         # left-hand side
         self.visit(node.left)
-        #print(node.right.__class__.__name__,self.symtab.lookup(node.left.value).type,node.right.datatype)
+        # print(node.right.__class__.__name__,self.symtab.lookup(node.left.value).type,
+        # node.right.datatype)
         if node.right.__class__.__name__ == "Num":
-            if str(self.symtab.lookup(node.left.value).type) == "INTEGER" and str(node.right.datatype) == "REAL":
+            if str(self.symtab.lookup(node.left.value).type) == "INTEGER" \
+                    and str(node.right.datatype) == "REAL":
                 raise Exception(
                     "Error: Non Matching types"
                 )
         elif node.right.__class__.__name__ == "BinOp":
-            if str(self.symtab.lookup(node.left.value).type) == "INTEGER" and str(node.right.datatype) == "REAL":
+            if str(self.symtab.lookup(node.left.value).type) == "INTEGER" \
+                    and str(node.right.datatype) == "REAL":
                 raise Exception(
                     "Error: Non Matching types"
                 )
         elif node.right.__class__.__name__ == "Var":
-            if str(self.symtab.lookup(node.left.value).type) == "INTEGER" and str(self.symtab.lookup(node.right.value).type) == "REAL":
+            if str(self.symtab.lookup(node.left.value).type) == "INTEGER" \
+                    and str(self.symtab.lookup(node.right.value).type) == "REAL":
                 raise Exception(
                     "Error: Non Matching types"
                 )
@@ -773,8 +840,22 @@ class SemanticAnalyzer(NodeVisitor):
                 "Error: Symbol(identifier) not found '%s'" % var_name
             )
 
+
     def visit_ProcedureDecl(self, node):
-        pass
+        proc_name = node.proc_name
+
+        # We have all the information we need to create a variable symbol.
+        # Create the symbol and insert it into the symbol table.
+
+        # Signal an error if the table alrady has a symbol
+        # with the same name
+        proc_symbol = ProcSymbol(proc_name)
+        if self.proctab.lookup(proc_name) is not None:
+            raise Exception(
+                "Error: Duplicate procedure name declaration"
+            )
+
+        self.proctab.insert(proc_symbol)
 
 ###############################################################################
 #                                                                             #
@@ -786,6 +867,18 @@ class Interpreter(NodeVisitor):
     def __init__(self, tree):
         self.tree = tree
         self.GLOBAL_MEMORY = OrderedDict()
+
+    def visit_Call(self,node):
+        # print(node.proc_name)
+        pass
+
+    def visit_Write(self,node):
+        printer = node.printer
+        # print(printer)
+        var = (self.GLOBAL_MEMORY[printer])
+        if var is not None:
+            print(var)
+
 
     def visit_Program(self, node):
         self.visit(node.block)
@@ -869,13 +962,16 @@ def main():
     # print(semantic_analyzer.symtab)
 
     interpreter = Interpreter(tree)
-    result = interpreter.interpret()
+    try:
+        result = interpreter.interpret()
+    except Exception as e:
+        rand = 5
     print('')
     print('Run-time GLOBAL_MEMORY contents:')
     for k, v in sorted(interpreter.GLOBAL_MEMORY.items()):
         print('%s = %s' % (k, v))
 
-    print(result)
+
 
 
 if __name__ == '__main__':
